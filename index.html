@@ -24,8 +24,10 @@
             var respirationStates = {
                 "Inhale" : 3000,
                 "Hold your breath" : 2000,
-                "Exhale" : 3000
+                "Exhale" : 3000,
+                "Wait": 200
             };
+            var colors = ['#894fbf', '#cce226', '#56aa1c', '#aadd6d'];
             
             // shim layer with setTimeout fallback
             window.requestAnimFrame = (function(){
@@ -48,7 +50,7 @@
                 };
             }
             
-            function renderCanvas(ctx, pattern, width, height, alpha, odd) {
+            function renderCanvas(ctx, width, height, alpha, i) {
                 ctx.fillStyle = pattern;
                 ctx.clearRect(0, 0, width, height);
                 ctx.beginPath();
@@ -59,15 +61,61 @@
                 ctx.fill();
             }
             
-            function doState(totalTime, odd, callback) {
+            function renderPieChartTimer(states, colors) {
+                var names = Object.keys(states);
+                var timeForAllStates = names.reduce(function(sum, name) {
+                    var time = states[name];
+                    return sum + time;
+                }, 0);
+                var endAngles = names.map(function(name) {
+                    var time = states[name];
+                    return (time / timeForAllStates) * Math.PI * 2;
+                });
+                var oddIteration = false, prevAlpha = -1;
+                
+                return function(ctx, width, height, alpha, currentStateIndex) {
+                    var center = {x: width/ 2, y: height / 2};
+                    var radius = width / 2;
+
+                    if(alpha < prevAlpha && currentStateIndex === 0) {
+                        oddIteration = !oddIteration;
+                    }
+                    prevAlpha = alpha;
+                    
+                    function drawPiece(startAngle, endAngle, anticlockwise) {
+                        ctx.beginPath();
+                        ctx.moveTo(center.x, center.y);
+                        ctx.arc(center.x, center.y, radius, startAngle, endAngle, anticlockwise);
+                        ctx.moveTo(center.x, center.y);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                    
+                    ctx.clearRect(0, 0, width, height);
+                    
+                    endAngles.reduce(function(startAngle, relativeEndAngle, index) {
+                        ctx.fillStyle = colors[index];
+                        drawPiece(startAngle, startAngle + relativeEndAngle, false);
+                        return startAngle + relativeEndAngle;
+                    }, 0);
+                    
+                    var completedStatesStartAngle = endAngles.slice(0, currentStateIndex).reduce(function(sum, angle) {
+                        return sum + angle;
+                    }, 0);
+                    
+                    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+                    drawPiece(0, completedStatesStartAngle + (endAngles[currentStateIndex] * alpha), oddIteration);
+                }
+            }
+            
+            function doState(renderer, totalTime, index, callback) {
                 var canvas = document.getElementById('time');
                 var ctx = canvas.getContext('2d');
-                var pattern = ctx.createPattern(fillPattern, 'repeat');
                 var t = timer(totalTime);
                 function nextFrame(time) {
                     var alpha = t(time);
                     if(alpha <= 1) {
-                        renderCanvas(ctx, pattern, canvas.width, canvas.height, alpha, odd);
+                        renderer(ctx, canvas.width, canvas.height, alpha, index);
                         window.requestAnimFrame(nextFrame);
                     } else {
                         callback();
@@ -76,22 +124,20 @@
                 window.requestAnimFrame(nextFrame);
             }
             
-            function loopStates(states) {
+            function loopStates(stateFn, states) {
                 var title = document.getElementById('title');
                 var stateNames = Object.keys(states);
                 var index = -1;
-                var oddState = true;
                 
                 function nextState() {
                     ++index;
                     if(index >= stateNames.length) {
                         index = 0;
                     }
-                    oddState = !oddState;
                     var stateName = stateNames[index];
                     var totalTime = states[stateName];
                     title.innerText = stateName;
-                    doState(totalTime, oddState, nextState);
+                    stateFn(totalTime, index, nextState);
                 }
                 
                 nextState();
@@ -104,48 +150,12 @@
                 timeCanvas.height = size;
             }
             
-            function waitForAll() {
-                var total = 0;
-                var triggered = 0;
-                var actionCallback;
-                return {
-                    wait: function() {
-                        ++total;
-                        return (function() {
-                            var hasBeenTriggered = false;
-                            return function() {
-                                if(hasBeenTriggered) {
-                                    return;
-                                }
-                                ++triggered;
-                                hasBeenTriggered = true;
-                                if(total === triggered) {
-                                    actionCallback();
-                                }
-                            }
-                        })();
-                    },
-                    action: function(callback) {
-                        actionCallback = callback;
-                    }
-                };
-            }
-            
-            var waiter = waitForAll();
-            
-            
             window.onresize = resizeCanvas;
             resizeCanvas();
             //wait 1.5 seconds to start
-            setTimeout(waiter.wait(), 1500);
-            
-            var fillPattern = document.createElement('img');
-            fillPattern.onload = waiter.wait();
-            fillPattern.src = 'http://subtlepatterns.subtlepatterns.netdna-cdn.com/patterns/textured_stripes.png';
-            
-            waiter.action(function() {
-                loopStates(respirationStates);
-            })
+            var stateFn = doState.bind(null, renderPieChartTimer(respirationStates, colors));
+            var loop = loopStates.bind(null, stateFn, respirationStates);
+            setTimeout(loop, 1500);
         </script>
     </body>
 </html>

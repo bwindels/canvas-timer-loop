@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <style type="text/css">
+            body {
+                background-image: url('http://subtlepatterns.subtlepatterns.netdna-cdn.com/patterns/low_contrast_linen.png');
+            }
+            h1 {
+                color: white;
+                text-align: center;
+                font-family: sans-serif;
+            }
+            #time {
+                margin-left: auto ;
+                margin-right: auto ;
+                display: block;
+            }
+        </style>
+    </head>
+    <body>
+        <h1 id="title">Starting ...</h1>
+        <canvas id="time" width="400" height="400"></canvas>
+        <script type="text/javascript">
+            var respirationStates = {
+                "Inhale" : 3000,
+                "Hold your breath" : 2000,
+                "Exhale" : 3000
+            };
+            
+            // shim layer with setTimeout fallback
+            window.requestAnimFrame = (function(){
+                return window.requestAnimationFrame       || 
+                window.webkitRequestAnimationFrame || 
+                window.mozRequestAnimationFrame    || 
+                window.oRequestAnimationFrame      || 
+                window.msRequestAnimationFrame     || 
+                function( callback ){
+                    window.setTimeout(function() {
+                        callback(new Date().getTime());
+                    }, 1000 / 60);
+                };
+            })();
+            
+            function timer(totalTime) {
+                var startTime = new Date().getTime();
+                return function(time) {
+                    return (time - startTime) / totalTime;
+                };
+            }
+            
+            function renderCanvas(ctx, pattern, width, height, alpha, odd) {
+                ctx.fillStyle = pattern;
+                ctx.clearRect(0, 0, width, height);
+                ctx.beginPath();
+                ctx.moveTo(width / 2, height / 2);
+                ctx.arc(width / 2, height / 2, width / 2, 0, Math.PI * 2 * alpha, odd);
+                ctx.moveTo(width / 2, height / 2);
+                ctx.closePath();
+                ctx.fill();
+            }
+            
+            function doState(totalTime, odd, callback) {
+                var canvas = document.getElementById('time');
+                var ctx = canvas.getContext('2d');
+                var pattern = ctx.createPattern(fillPattern, 'repeat');
+                var t = timer(totalTime);
+                function nextFrame(time) {
+                    var alpha = t(time);
+                    if(alpha <= 1) {
+                        renderCanvas(ctx, pattern, canvas.width, canvas.height, alpha, odd);
+                        window.requestAnimFrame(nextFrame);
+                    } else {
+                        callback();
+                    }
+                }
+                window.requestAnimFrame(nextFrame);
+            }
+            
+            function loopStates(states) {
+                var title = document.getElementById('title');
+                var stateNames = Object.keys(states);
+                var index = -1;
+                var oddState = true;
+                
+                function nextState() {
+                    ++index;
+                    if(index >= stateNames.length) {
+                        index = 0;
+                    }
+                    oddState = !oddState;
+                    var stateName = stateNames[index];
+                    var totalTime = states[stateName];
+                    title.innerText = stateName;
+                    doState(totalTime, oddState, nextState);
+                }
+                
+                nextState();
+            }
+            
+            function resizeCanvas() {
+                var timeCanvas = document.getElementById('time');
+                var size = Math.min(window.innerWidth - 20, window.innerHeight - 100);
+                timeCanvas.width = size;
+                timeCanvas.height = size;
+            }
+            
+            function waitForAll() {
+                var total = 0;
+                var triggered = 0;
+                var actionCallback;
+                return {
+                    wait: function() {
+                        ++total;
+                        return (function() {
+                            var hasBeenTriggered = false;
+                            return function() {
+                                if(hasBeenTriggered) {
+                                    return;
+                                }
+                                ++triggered;
+                                hasBeenTriggered = true;
+                                if(total === triggered) {
+                                    actionCallback();
+                                }
+                            }
+                        })();
+                    },
+                    action: function(callback) {
+                        actionCallback = callback;
+                    }
+                };
+            }
+            
+            var waiter = waitForAll();
+            
+            
+            window.onresize = resizeCanvas;
+            resizeCanvas();
+            //wait 1.5 seconds to start
+            setTimeout(waiter.wait(), 1500);
+            
+            var fillPattern = document.createElement('img');
+            fillPattern.onload = waiter.wait();
+            fillPattern.src = 'http://subtlepatterns.subtlepatterns.netdna-cdn.com/patterns/textured_stripes.png';
+            
+            waiter.action(function() {
+                loopStates(respirationStates);
+            })
+        </script>
+    </body>
+</html>
